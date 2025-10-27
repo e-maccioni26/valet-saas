@@ -1,13 +1,25 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '../../../../lib/supabaseClient'
+import { createClient } from '@supabase/supabase-js'
 
-export async function GET(_: Request, { params }: { params: { token: string } }) {
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+export async function GET(_req: Request, context: { params: Promise<{ token: string }> }) {
+  // ✅ on attend la promesse "params"
+  const { token } = await context.params
+
   const { data, error } = await supabase
     .from('tickets')
     .select('*')
-    .eq('token', params.token)
+    .eq('token', token)
     .single()
 
-  if (error || !data) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  if (error || !data) {
+    console.error('❌ Ticket not found or query error:', error)
+    return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  }
+
   return NextResponse.json({ ticket: data })
 }

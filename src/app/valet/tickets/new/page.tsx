@@ -7,6 +7,7 @@ import QRCode from 'qrcode'
 export default function NewTicketPage() {
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const [shortCode, setShortCode] = useState('0001')
+  const [ticketUrl, setTicketUrl] = useState<string>('')
 
   async function handleCreate() {
     const token = ulid()
@@ -18,8 +19,11 @@ export default function NewTicketPage() {
     if (!res.ok) return alert('Erreur création ticket')
 
     const url = `${window.location.origin}/r/${token}`
+
+    // Génération du QR Code
     const dataUrl = await QRCode.toDataURL(url, { width: 256, margin: 1 })
     setQrDataUrl(dataUrl)
+    setTicketUrl(url)
   }
 
   return (
@@ -41,10 +45,21 @@ export default function NewTicketPage() {
       </div>
 
       {qrDataUrl && (
-        <div>
-          <img src={qrDataUrl} alt="QR Code" className="border p-2" />
-          <p className="mt-2 text-gray-500">
-            Scanne le QR ou clique sur le lien pour simuler le client
+        <div className="mt-6 text-center">
+          <a href={ticketUrl} target="_blank" rel="noopener noreferrer">
+            <img
+              src={qrDataUrl}
+              alt="QR Code"
+              className="border p-2 mx-auto hover:scale-105 transition-transform duration-150 cursor-pointer"
+            />
+          </a>
+          <p className="mt-2 text-sm text-gray-600">
+            Scanne le QR ou clique dessus pour simuler le client
+          </p>
+          <p className="mt-1 text-sm">
+            <a href={ticketUrl} className="text-blue-600 underline" target="_blank" rel="noopener noreferrer">
+              {ticketUrl}
+            </a>
           </p>
         </div>
       )}
