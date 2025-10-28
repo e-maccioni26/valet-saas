@@ -37,9 +37,9 @@ export default function Dashboard() {
 
   // Toast + bip
   const [toast, setToast] = useState<{ open: boolean; title: string; desc?: string }>({
-    open: false,
-    title: '',
-  })
+  open: false,
+  title: '',
+})
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
@@ -86,17 +86,49 @@ export default function Dashboard() {
     return () => supabase.removeChannel(ch)
   }, [])
 
-  // marquer comme traité avec animation
-  async function markHandled(id: string) {
+async function markHandled(id: string) {
+  try {
+    // Animation d’attente
     setFading((prev) => [...prev, id])
-    await new Promise((r) => setTimeout(r, 250))
-    const res = await fetch(`/api/requests/${id}/handle`, { method: 'POST' })
-    if (!res.ok) return alert('Erreur: impossible de marquer comme traité')
-    setRequests((prev) => prev.filter((r) => r.id !== id))
-    setToast({ open: true, title: '✅ Demande traitée avec succès' })
-    setFading((prev) => prev.filter((x) => x !== id))
-  }
+    await new Promise((r) => setTimeout(r, 200))
 
+    const res = await fetch(`/api/requests/${id}/handle`, { method: 'POST' })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      console.error('Erreur backend:', err)
+      setToast({
+        open: true,
+        title: '❌ Erreur',
+        desc: 'Impossible de marquer la demande comme traitée.',
+      })
+      setFading((prev) => prev.filter((x) => x !== id))
+      return
+    }
+
+    // Mise à jour locale immédiate
+    setRequests((prev) =>
+      prev.map((r) =>
+        r.id === id ? { ...r, handled_at: new Date().toISOString() } : r
+      )
+    )
+
+    // ✅ Toast clean avec auto-close
+    setToast({
+      open: true,
+      title: '✅ Demande traitée avec succès',
+      desc: 'La demande a été mise à jour dans la base de données.',
+    })
+
+    setFading((prev) => prev.filter((x) => x !== id))
+  } catch (err) {
+    console.error('Erreur inattendue:', err)
+    setToast({
+      open: true,
+      title: '⚠️ Erreur inattendue',
+      desc: String(err),
+    })
+  }
+}
   // filtres dynamiques
   const filtered = useMemo(() => {
     const now = new Date()
@@ -336,18 +368,12 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Toast */}
-      <div
-        className={`fixed right-4 top-4 z-50 transform transition-all duration-500 ease-out ${
-          toast.open
-            ? 'translate-y-0 opacity-100'
-            : '-translate-y-8 opacity-0 pointer-events-none'
-        }`}
-      >
-        <div className="bg-green-600 text-white rounded-lg px-4 py-2 shadow-lg">
-          {toast.title}
-        </div>
-      </div>
+     <Toast
+        open={toast.open}
+        title={toast.title}
+        desc={toast.desc}
+        onClose={() => setToast({ open: false, title: '', desc: '' })}
+      />
     </div>
   )
 }
