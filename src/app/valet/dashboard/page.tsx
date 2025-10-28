@@ -236,7 +236,7 @@ export default function Dashboard() {
               timeFilter === 'today' ? 'bg-black text-white' : 'bg-white'
             }`}
           >
-            Aujourd'hui
+            Aujourd&apos;hui
           </button>
           <button
             onClick={() => setTimeFilter('all')}
