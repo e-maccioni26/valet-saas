@@ -3,10 +3,18 @@ import { createSupabaseServer } from '../../../../lib/supabaseServer'
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> } // 👈 params est une Promise maintenant
 ) {
   const supabase = await createSupabaseServer()
-  const { id } = params
+  
+  // ⬇️ Attendre la résolution de params
+  const { id } = await context.params
+
+  console.log('🧩 ID reçu depuis la route:', id)
+
+  if (!id) {
+    return NextResponse.json({ error: 'Missing request ID' }, { status: 400 })
+  }
 
   const { error } = await supabase
     .from('requests')
