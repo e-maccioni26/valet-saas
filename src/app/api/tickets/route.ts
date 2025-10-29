@@ -7,24 +7,35 @@ const supabase = createClient(
 )
 
 export async function POST(req: NextRequest) {
-  const body = await req.json()
-  const { shortCode, token } = body
-  const eventId = process.env.DEFAULT_EVENT_ID
+  try {
+    const body = await req.json()
+    const { shortCode, token, eventId } = body
 
-  console.log('📦 Reçu du front:', body)
-  console.log('🎫 eventId utilisé:', eventId)
+    console.log('📦 Reçu du front:', body)
+    console.log('🎫 eventId utilisé:', eventId)
 
-  const { data, error } = await supabase
-    .from('tickets')
-    .insert({ short_code: shortCode, token, event_id: eventId })
-    .select()
-    .single()
+    if (!shortCode || !token || !eventId) {
+      return NextResponse.json(
+        { error: 'Champs requis manquants (shortCode, token, eventId).' },
+        { status: 400 }
+      )
+    }
 
-  if (error) {
-    console.error('❌ Supabase error:', error)
-    return NextResponse.json({ error }, { status: 400 })
+    const { data, error } = await supabase
+      .from('tickets')
+      .insert({ short_code: shortCode, token, event_id: eventId })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('❌ Supabase error:', error)
+      return NextResponse.json({ error }, { status: 400 })
+    }
+
+    console.log('✅ Ticket créé:', data)
+    return NextResponse.json({ ticket: data })
+  } catch (err) {
+    console.error('🔥 Erreur interne:', err)
+    return NextResponse.json({ error: String(err) }, { status: 500 })
   }
-
-  console.log('✅ Ticket créé:', data)
-  return NextResponse.json({ ticket: data })
 }

@@ -53,35 +53,46 @@ export default function Dashboard() {
     }
     load()
 
-    // realtime
-    const ch = supabase
-      .channel('requests-stream')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'requests' },
-        async (payload) => {
-          const { data: t } = await supabase
-            .from('tickets')
-            .select('short_code')
-            .eq('id', (payload.new as any).ticket_id)
-            .single()
-          const newReq: RequestRow = { ...(payload.new as any), ticket: t || undefined }
-          setRequests((prev) => [newReq, ...prev])
+   // Realtime : insert + update
+const ch = supabase
+  .channel('requests-stream')
+  .on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'requests' },
+    async (payload) => {
+      const { data: t } = await supabase
+        .from('tickets')
+        .select('short_code')
+        .eq('id', (payload.new as any).ticket_id)
+        .single()
 
-          setToast({
-            open: true,
-            title: `Nouvelle demande – Ticket #${t?.short_code ?? '—'}`,
-            desc:
-              newReq.type === 'pickup'
-                ? 'Récupération véhicule'
-                : newReq.type === 'keys'
-                ? 'Clés'
-                : 'Autre',
-          })
-          if (audioRef.current) audioRef.current.play().catch(() => {})
-        }
+      const newReq: RequestRow = { ...(payload.new as any), ticket: t || undefined }
+      setRequests((prev) => [newReq, ...prev])
+
+      setToast({
+        open: true,
+        title: `🆕 Nouvelle demande – Ticket #${t?.short_code ?? '—'}`,
+        desc:
+          newReq.type === 'pickup'
+            ? 'Récupération véhicule'
+            : newReq.type === 'keys'
+            ? 'Clés'
+            : 'Autre',
+      })
+      if (audioRef.current) audioRef.current.play().catch(() => {})
+    }
+  )
+  .on(
+    'postgres_changes',
+    { event: 'UPDATE', schema: 'public', table: 'requests' },
+    (payload) => {
+      const updated = payload.new as any
+      setRequests((prev) =>
+        prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r))
       )
-      .subscribe()
+    }
+  )
+  .subscribe()
 
     return () => supabase.removeChannel(ch)
   }, [])
