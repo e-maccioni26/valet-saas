@@ -1,20 +1,17 @@
-import { type NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
 
   const supabase = createServerClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name) => req.cookies.get(name)?.value,
-        set: (name, value, options) => {
-          res.cookies.set(name, value, options)
-        },
-        remove: (name) => {
-          res.cookies.delete(name)
+        get(name) {
+          return req.cookies.get(name)?.value
         },
       },
     }
@@ -24,18 +21,23 @@ export async function middleware(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const isValetRoute = req.nextUrl.pathname.startsWith('/valet')
-  const isAuthRoute  = req.nextUrl.pathname.startsWith('/auth')
+  const url = req.nextUrl.clone()
 
-  if (isValetRoute && !user && !isAuthRoute) {
-    const redirectUrl = req.nextUrl.clone()
-    redirectUrl.pathname = '/auth/login'
-    return NextResponse.redirect(redirectUrl)
+  // 🔒 Redirige vers /auth/login si non connecté
+  if (!user && url.pathname.startsWith('/valet')) {
+    url.pathname = '/auth/login'
+    return NextResponse.redirect(url)
+  }
+
+  // 🚫 Redirige vers /valet/dashboard si déjà connecté
+  if (user && url.pathname.startsWith('/auth')) {
+    url.pathname = '/valet/dashboard'
+    return NextResponse.redirect(url)
   }
 
   return res
 }
 
 export const config = {
-  matcher: ['/valet/:path*'],
+  matcher: ['/valet/:path*', '/auth/:path*'],
 }

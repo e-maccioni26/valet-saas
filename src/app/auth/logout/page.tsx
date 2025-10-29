@@ -1,17 +1,24 @@
 'use client'
 
 import { useEffect } from 'react'
-import { logout } from './actions'
+import { createSupabaseClient } from '../../lib/supabaseClient'
+import { useRouter } from 'next/navigation'
 
 export default function LogoutPage() {
+  const supabase = createSupabaseClient()
+  const router = useRouter()
+
   useEffect(() => {
-    // déclenche la server action logout
-    void logout()
-  }, [])
+    const signOut = async () => {
+      await supabase.auth.signOut()
+      router.push('/auth/login')
+    }
+    signOut()
+  }, [router, supabase])
 
   return (
-    <div className="h-screen flex items-center justify-center">
-      <p className="text-lg">Déconnexion en cours…</p>
+    <div className="flex items-center justify-center min-h-screen bg-gray-100">
+      <div className="text-center text-gray-700">Déconnexion en cours...</div>
     </div>
   )
 }
