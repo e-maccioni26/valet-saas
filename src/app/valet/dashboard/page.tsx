@@ -42,60 +42,68 @@ export default function Dashboard() {
 })
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  useEffect(() => {
-    // charge initial
-    const load = async () => {
-      const { data, error } = await supabase
-        .from('requests')
-        .select('*, ticket:tickets(short_code)')
-        .order('created_at', { ascending: false })
-      if (!error && data) setRequests(data as any)
-    }
-    load()
+useEffect(() => {
+  // charge initial
+  const load = async () => {
+    const { data, error } = await supabase
+      .from('requests')
+      .select('*, ticket:tickets(short_code)')
+      .order('created_at', { ascending: false })
+    if (!error && data) setRequests(data as any)
+  }
+  load()
 
-   // Realtime : insert + update
-const ch = supabase
-  .channel('requests-stream')
-  .on(
-    'postgres_changes',
-    { event: 'INSERT', schema: 'public', table: 'requests' },
-    async (payload) => {
-      const { data: t } = await supabase
-        .from('tickets')
-        .select('short_code')
-        .eq('id', (payload.new as any).ticket_id)
-        .single()
+  // ✅ realtime insert + update
+  const ch = supabase
+    .channel('requests-stream')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'requests' },
+      async (payload) => {
+        const newReq = payload.new as any
+        const oldReq = payload.old as any
 
-      const newReq: RequestRow = { ...(payload.new as any), ticket: t || undefined }
-      setRequests((prev) => [newReq, ...prev])
+        // 👉 INSERT = nouvelle demande
+        if (payload.eventType === 'INSERT') {
+          const { data: t } = await supabase
+            .from('tickets')
+            .select('short_code')
+            .eq('id', newReq.ticket_id)
+            .single()
+          setRequests((prev) => [{ ...newReq, ticket: t || undefined }, ...prev])
 
-      setToast({
-        open: true,
-        title: `🆕 Nouvelle demande – Ticket #${t?.short_code ?? '—'}`,
-        desc:
-          newReq.type === 'pickup'
-            ? 'Récupération véhicule'
-            : newReq.type === 'keys'
-            ? 'Clés'
-            : 'Autre',
-      })
-      if (audioRef.current) audioRef.current.play().catch(() => {})
-    }
-  )
-  .on(
-    'postgres_changes',
-    { event: 'UPDATE', schema: 'public', table: 'requests' },
-    (payload) => {
-      const updated = payload.new as any
-      setRequests((prev) =>
-        prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r))
-      )
-    }
-  )
-  .subscribe()
+          setToast({
+            open: true,
+            title: `Nouvelle demande – Ticket #${t?.short_code ?? '—'}`,
+            desc:
+              newReq.type === 'pickup'
+                ? 'Récupération véhicule'
+                : newReq.type === 'keys'
+                ? 'Clés'
+                : 'Autre',
+          })
+          if (audioRef.current) audioRef.current.play().catch(() => {})
+        }
 
-    return () => supabase.removeChannel(ch)
-  }, [])
+        // 👉 UPDATE = marquage "Traité"
+        if (payload.eventType === 'UPDATE' && newReq.handled_at) {
+          setRequests((prev) =>
+            prev.map((r) =>
+              r.id === newReq.id ? { ...r, handled_at: newReq.handled_at } : r
+            )
+          )
+          setToast({
+            open: true,
+            title: `✅ Ticket #${oldReq?.ticket_id ?? ''} traité`,
+            desc: 'Demande mise à jour avec succès',
+          })
+        }
+      }
+    )
+    .subscribe()
+
+  return () => supabase.removeChannel(ch)
+}, [])
 
 async function markHandled(id: string) {
   try {

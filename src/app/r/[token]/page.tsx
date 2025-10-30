@@ -18,7 +18,7 @@ export default function ClientPage({ params }: { params: Promise<{ token: string
   const [comment, setComment] = useState('')
   const [status, setStatus] = useState<'idle' | 'pending' | 'handled' | 'error'>('idle')
 
-  // Charger le ticket initial
+  // Charger le ticket
   useEffect(() => {
     ;(async () => {
       const res = await fetch(`/api/tickets/by-token/${token}`)
@@ -33,47 +33,49 @@ export default function ClientPage({ params }: { params: Promise<{ token: string
     })()
   }, [token])
 
-  // Écouter les updates en temps réel
-  useEffect(() => {
-    if (!ticket?.id) return
+ // Écoute les updates côté client
+useEffect(() => {
+  if (!ticket?.id) return
 
-    const channel = supabase
-      .channel('requests-realtime-client')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'requests' },
-        (payload) => {
-          const updated = payload.new as any
-          if (updated.ticket_id === ticket.id && updated.handled_at) {
-            console.log('🔔 Demande traitée en temps réel:', updated)
-            setStatus('handled')
-            triggerFeedback()
-          }
+  const channel = supabase
+    .channel('requests-realtime-client')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'requests' },
+      (payload) => {
+        const updated = payload.new as any
+
+        // ✅ détecte update handled_at
+        if (updated.ticket_id === ticket.id && updated.handled_at) {
+          console.log('🟢 Demande traitée détectée:', updated)
+          setStatus('handled')
+          triggerFeedback()
         }
-      )
-      .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [ticket])
-
-  // Fonction de vibration + son
-  const triggerFeedback = () => {
-    // Vibration mobile
-    if (navigator.vibrate) navigator.vibrate([80, 50, 80])
-
-    // Petit son de notification
-    const audio = new Audio(
-      'https://cdn.pixabay.com/audio/2022/03/15/audio_ae1b1b14b1.mp3'
+        // ✅ détecte création initiale
+        if (updated.ticket_id === ticket.id && payload.eventType === 'INSERT') {
+          console.log('📨 Nouvelle demande envoyée')
+          setStatus('pending')
+        }
+      }
     )
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}, [ticket])
+
+  // Feedback : vibration + son
+  const triggerFeedback = () => {
+    if (navigator.vibrate) navigator.vibrate([100, 60, 100])
+    const audio = new Audio('https://cdn.pixabay.com/audio/2022/03/15/audio_ae1b1b14b1.mp3')
     audio.play().catch(() => {})
   }
 
   // Envoyer la demande
   async function sendRequest(type: 'pickup' | 'keys' | 'other') {
     if (!ticket) return alert('Ticket non chargé.')
-
     setStatus('pending')
 
     const payload: any = {
@@ -99,66 +101,96 @@ export default function ClientPage({ params }: { params: Promise<{ token: string
     setStatus('pending')
   }
 
-  if (loading) return <div className="h-screen flex items-center justify-center text-gray-500">Chargement...</div>
-  if (!ticket) return <div className="h-screen flex items-center justify-center text-red-500">Ticket introuvable</div>
+  if (loading)
+    return <div className="h-screen flex items-center justify-center text-gray-500">Chargement...</div>
+  if (!ticket)
+    return <div className="h-screen flex items-center justify-center text-red-500">Ticket introuvable</div>
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 flex flex-col items-center justify-center px-6 py-10">
-      <div className="bg-white rounded-3xl shadow-lg w-full max-w-md p-8 border border-gray-200 animate-fadeIn">
-        <h1 className="text-2xl font-bold text-center mb-2">🎟️ Ticket #{ticket.short_code}</h1>
-        <p className="text-gray-500 text-center mb-6">Souhaitez-vous récupérer votre véhicule ?</p>
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      {/* Barre supérieure sticky */}
+      <header
+        className={`sticky top-0 z-20 w-full text-white text-center py-3 font-semibold transition-all ${
+          status === 'handled'
+            ? 'bg-green-600 animate-fadeIn'
+            : status === 'pending'
+            ? 'bg-blue-600 animate-pulse'
+            : 'bg-gray-800'
+        }`}
+      >
+        {status === 'handled'
+          ? '✅ Votre voiturier arrive 🚘'
+          : status === 'pending'
+          ? '📨 Demande en cours de traitement...'
+          : '🅿️ Service voiturier'}
+      </header>
 
-        {/* Statut dynamique */}
-        <div className="mb-6 text-center">
-          {status === 'idle' && (
-            <div className="text-gray-500 font-medium">🕓 En attente de votre demande</div>
-          )}
-          {status === 'pending' && (
-            <div className="text-blue-600 font-medium animate-pulse">📨 Demande envoyée, un voiturier va bientôt la traiter...</div>
-          )}
-          {status === 'handled' && (
-            <div className="text-green-600 font-semibold animate-fadeIn">✅ Votre demande a été traitée — le voiturier arrive 🚗</div>
-          )}
-          {status === 'error' && (
-            <div className="text-red-600 font-medium">⚠️ Erreur de traitement</div>
-          )}
-        </div>
+      {/* Contenu principal */}
+      <main className="flex-1 flex flex-col justify-between px-6 py-8 max-w-md mx-auto w-full">
+        <div>
+          <h1 className="text-2xl font-bold text-center mb-2">
+            Ticket #{ticket.short_code}
+          </h1>
+          <p className="text-gray-500 text-center mb-6">
+            Indiquez quand vous souhaitez récupérer votre véhicule
+          </p>
 
-        <div className="space-y-3 mb-4">
-          <div className="flex items-center justify-between gap-3">
-            <label className="text-sm text-gray-600">Dans (minutes)</label>
-            <input
-              type="number"
-              className="border rounded-lg p-2 w-24 text-center focus:outline-none focus:ring-2 focus:ring-black"
-              value={eta ?? ''}
-              onChange={(e) => setEta(Number(e.target.value))}
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-sm text-gray-600">Dans (minutes)</label>
+              <input
+                type="number"
+                className="border rounded-lg p-2 w-24 text-center focus:outline-none focus:ring-2 focus:ring-black"
+                value={eta ?? ''}
+                onChange={(e) => setEta(Number(e.target.value))}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-sm text-gray-600">Ou à (heure)</label>
+              <input
+                type="time"
+                className="border rounded-lg p-2 w-36 focus:outline-none focus:ring-2 focus:ring-black"
+                value={at}
+                onChange={(e) => setAt(e.target.value)}
+              />
+            </div>
+
+            <textarea
+              className="border rounded-lg p-2 w-full h-24 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+              placeholder="Message au voiturier (optionnel)"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
             />
           </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <label className="text-sm text-gray-600">Ou à (heure)</label>
-            <input
-              type="time"
-              className="border rounded-lg p-2 w-36 focus:outline-none focus:ring-2 focus:ring-black"
-              value={at}
-              onChange={(e) => setAt(e.target.value)}
-            />
+          {/* Statut visuel */}
+          <div className="mb-6 text-center">
+            {status === 'idle' && (
+              <div className="text-gray-500 font-medium">🕓 En attente de votre demande</div>
+            )}
+            {status === 'pending' && (
+              <div className="text-blue-600 font-medium animate-pulse">
+                🧑‍🔧 Le voiturier prépare votre véhicule...
+              </div>
+            )}
+            {status === 'handled' && (
+              <div className="text-green-600 font-semibold animate-fadeIn">
+                ✅ Votre demande a été traitée — le voiturier arrive 🚗
+              </div>
+            )}
+            {status === 'error' && (
+              <div className="text-red-600 font-medium">⚠️ Une erreur est survenue</div>
+            )}
           </div>
-
-          <textarea
-            className="border rounded-lg p-2 w-full h-24 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-            placeholder="Message au voiturier (optionnel)"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-          />
         </div>
 
-        {/* Boutons */}
-        <div className="grid grid-cols-3 gap-3 mt-6">
+        {/* Boutons fixes bas */}
+        <div className="grid grid-cols-3 gap-3 mt-auto mb-4">
           <button
             disabled={status === 'pending'}
             onClick={() => sendRequest('pickup')}
-            className={`py-2 rounded-lg font-medium transition ${
+            className={`py-3 rounded-lg font-medium transition text-sm ${
               status === 'pending'
                 ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
                 : 'bg-black text-white hover:bg-gray-800'
@@ -169,7 +201,7 @@ export default function ClientPage({ params }: { params: Promise<{ token: string
           <button
             disabled={status === 'pending'}
             onClick={() => sendRequest('keys')}
-            className={`py-2 rounded-lg border font-medium transition ${
+            className={`py-3 rounded-lg border font-medium text-sm transition ${
               status === 'pending'
                 ? 'border-gray-300 text-gray-400'
                 : 'border-black text-black hover:bg-black hover:text-white'
@@ -180,7 +212,7 @@ export default function ClientPage({ params }: { params: Promise<{ token: string
           <button
             disabled={status === 'pending'}
             onClick={() => sendRequest('other')}
-            className={`py-2 rounded-lg border font-medium transition ${
+            className={`py-3 rounded-lg border font-medium text-sm transition ${
               status === 'pending'
                 ? 'border-gray-300 text-gray-400'
                 : 'border-black text-black hover:bg-black hover:text-white'
@@ -189,7 +221,7 @@ export default function ClientPage({ params }: { params: Promise<{ token: string
             Autre
           </button>
         </div>
-      </div>
+      </main>
     </div>
   )
 }
