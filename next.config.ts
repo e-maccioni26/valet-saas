@@ -1,8 +1,9 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  /* config options here */
-  reactCompiler: true,
-};
-
-export default nextConfig;
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  experimental: {
+    serverActions: {
+      allowedOrigins: ['localhost:3000'],  // adapter ton domaine
+    },
+  },
+}
+export default nextConfig
