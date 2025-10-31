@@ -2,9 +2,23 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import Badge from '@/components/Badge'
-import Toast from '@/components/Toast'
-import StatCard from '@/components/StatCard'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { useToast } from '../../../hooks/use-toast'
+import { 
+  Car, 
+  Key, 
+  MessageSquare, 
+  Clock, 
+  CheckCircle2, 
+  Search,
+  Calendar,
+  TrendingUp,
+  Users,
+  Filter
+} from 'lucide-react'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,128 +41,107 @@ type RequestRow = {
 
 export default function Dashboard() {
   const [requests, setRequests] = useState<RequestRow[]>([])
-  const [fading, setFading] = useState<string[]>([]) // ids animées
+  const [fading, setFading] = useState<string[]>([])
+  const { toast } = useToast()
 
-  // filtres
+  // Filtres
   const [typeFilter, setTypeFilter] = useState<'all' | ReqType>('all')
   const [statusFilter, setStatusFilter] = useState<'open' | 'handled' | 'all'>('open')
   const [query, setQuery] = useState('')
   const [timeFilter, setTimeFilter] = useState<'1h' | 'today' | 'all'>('today')
 
-  // Toast + bip
-  const [toast, setToast] = useState<{ open: boolean; title: string; desc?: string }>({
-  open: false,
-  title: '',
-})
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-useEffect(() => {
-  // charge initial
-  const load = async () => {
-    const { data, error } = await supabase
-      .from('requests')
-      .select('*, ticket:tickets(short_code)')
-      .order('created_at', { ascending: false })
-    if (!error && data) setRequests(data as any)
-  }
-  load()
-
-  // ✅ realtime insert + update
-  const ch = supabase
-    .channel('requests-stream')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'requests' },
-      async (payload) => {
-        const newReq = payload.new as any
-        const oldReq = payload.old as any
-
-        // 👉 INSERT = nouvelle demande
-        if (payload.eventType === 'INSERT') {
-          const { data: t } = await supabase
-            .from('tickets')
-            .select('short_code')
-            .eq('id', newReq.ticket_id)
-            .single()
-          setRequests((prev) => [{ ...newReq, ticket: t || undefined }, ...prev])
-
-          setToast({
-            open: true,
-            title: `Nouvelle demande – Ticket #${t?.short_code ?? '—'}`,
-            desc:
-              newReq.type === 'pickup'
-                ? 'Récupération véhicule'
-                : newReq.type === 'keys'
-                ? 'Clés'
-                : 'Autre',
-          })
-          if (audioRef.current) audioRef.current.play().catch(() => {})
-        }
-
-        // 👉 UPDATE = marquage "Traité"
-        if (payload.eventType === 'UPDATE' && newReq.handled_at) {
-          setRequests((prev) =>
-            prev.map((r) =>
-              r.id === newReq.id ? { ...r, handled_at: newReq.handled_at } : r
-            )
-          )
-          setToast({
-            open: true,
-            title: `✅ Ticket #${oldReq?.ticket_id ?? ''} traité`,
-            desc: 'Demande mise à jour avec succès',
-          })
-        }
-      }
-    )
-    .subscribe()
-
-  return () => supabase.removeChannel(ch)
-}, [])
-
-async function markHandled(id: string) {
-  try {
-    // Animation d’attente
-    setFading((prev) => [...prev, id])
-    await new Promise((r) => setTimeout(r, 200))
-
-    const res = await fetch(`/api/requests/${id}/handle`, { method: 'POST' })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      console.error('Erreur backend:', err)
-      setToast({
-        open: true,
-        title: '❌ Erreur',
-        desc: 'Impossible de marquer la demande comme traitée.',
-      })
-      setFading((prev) => prev.filter((x) => x !== id))
-      return
+  useEffect(() => {
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('requests')
+        .select('*, ticket:tickets(short_code)')
+        .order('created_at', { ascending: false })
+      if (!error && data) setRequests(data as any)
     }
+    load()
 
-    // Mise à jour locale immédiate
-    setRequests((prev) =>
-      prev.map((r) =>
-        r.id === id ? { ...r, handled_at: new Date().toISOString() } : r
+    const ch = supabase
+      .channel('requests-stream')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'requests' },
+        async (payload) => {
+          const newReq = payload.new as any
+
+          if (payload.eventType === 'INSERT') {
+            const { data: t } = await supabase
+              .from('tickets')
+              .select('short_code')
+              .eq('id', newReq.ticket_id)
+              .single()
+            setRequests((prev) => [{ ...newReq, ticket: t || undefined }, ...prev])
+
+            toast({
+              title: `Nouvelle demande – Ticket #${t?.short_code ?? '—'}`,
+              description:
+                newReq.type === 'pickup'
+                  ? '🚗 Récupération véhicule'
+                  : newReq.type === 'keys'
+                  ? '🔑 Clés'
+                  : '💬 Autre',
+            })
+            if (audioRef.current) audioRef.current.play().catch(() => {})
+          }
+
+          if (payload.eventType === 'UPDATE' && newReq.handled_at) {
+            setRequests((prev) =>
+              prev.map((r) =>
+                r.id === newReq.id ? { ...r, handled_at: newReq.handled_at } : r
+              )
+            )
+          }
+        }
       )
-    )
+      .subscribe()
 
-    // ✅ Toast clean avec auto-close
-    setToast({
-      open: true,
-      title: '✅ Demande traitée avec succès',
-      desc: 'La demande a été mise à jour dans la base de données.',
-    })
+    return () => supabase.removeChannel(ch)
+  }, [toast])
 
-    setFading((prev) => prev.filter((x) => x !== id))
-  } catch (err) {
-    console.error('Erreur inattendue:', err)
-    setToast({
-      open: true,
-      title: '⚠️ Erreur inattendue',
-      desc: String(err),
-    })
+  async function markHandled(id: string) {
+    try {
+      setFading((prev) => [...prev, id])
+      await new Promise((r) => setTimeout(r, 200))
+
+      const res = await fetch(`/api/requests/${id}/handle`, { method: 'POST' })
+      if (!res.ok) {
+        toast({
+          title: '❌ Erreur',
+          description: 'Impossible de marquer la demande comme traitée.',
+          variant: 'destructive',
+        })
+        setFading((prev) => prev.filter((x) => x !== id))
+        return
+      }
+
+      setRequests((prev) =>
+        prev.map((r) =>
+          r.id === id ? { ...r, handled_at: new Date().toISOString() } : r
+        )
+      )
+
+      toast({
+        title: '✅ Demande traitée',
+        description: 'La demande a été marquée comme traitée.',
+      })
+
+      setFading((prev) => prev.filter((x) => x !== id))
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: '⚠️ Erreur inattendue',
+        description: String(err),
+        variant: 'destructive',
+      })
+    }
   }
-}
-  // filtres dynamiques
+
   const filtered = useMemo(() => {
     const now = new Date()
     const from =
@@ -175,7 +168,6 @@ async function markHandled(id: string) {
     })
   }, [requests, typeFilter, statusFilter, query, timeFilter])
 
-  // stats
   const stats = useMemo(() => {
     const today = new Date(new Date().toDateString())
     const todayReqs = requests.filter((r) => new Date(r.created_at) >= today)
@@ -185,214 +177,294 @@ async function markHandled(id: string) {
       const vals = requests
         .map((r) => r.pickup_eta_minutes)
         .filter((v): v is number => typeof v === 'number')
-      if (!vals.length) return '-'
+      if (!vals.length) return '—'
       const m = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
       return `${m} min`
     })()
     return { today: todayReqs.length, open: open.length, pickupsToday, avgEta }
   }, [requests])
 
-  return (
-    <div className="p-6 space-y-6">
-      <audio
-        ref={audioRef}
-        src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAA=="
-      />
-      <h1 className="text-2xl font-bold">📋 Dashboard Voiturier</h1>
+  const getTypeIcon = (type: ReqType) => {
+    switch (type) {
+      case 'pickup':
+        return <Car className="h-4 w-4" />
+      case 'keys':
+        return <Key className="h-4 w-4" />
+      default:
+        return <MessageSquare className="h-4 w-4" />
+    }
+  }
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-        <StatCard label="Demandes aujourd'hui" value={stats.today} />
-        <StatCard label="Ouvertes" value={stats.open} />
-        <StatCard label="Récupérations aujourd'hui" value={stats.pickupsToday} />
-        <StatCard label="ETA moyen" value={stats.avgEta} />
+  const getTypeLabel = (type: ReqType) => {
+    switch (type) {
+      case 'pickup':
+        return 'Récupération'
+      case 'keys':
+        return 'Clés'
+      default:
+        return 'Autre'
+    }
+  }
+
+  return (
+    <div className="space-y-6 p-6">
+      <audio ref={audioRef} src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAA==" />
+
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <p className="text-muted-foreground">
+          Gérez vos demandes de voiturier en temps réel
+        </p>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Aujourd&apos;hui</CardTitle>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.today}</div>
+            <p className="text-xs text-muted-foreground">
+              Demandes reçues aujourd&apos;hui
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Ouvertes</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.open}</div>
+            <p className="text-xs text-muted-foreground">
+              Demandes en attente
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Récupérations</CardTitle>
+            <Car className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.pickupsToday}</div>
+            <p className="text-xs text-muted-foreground">
+              Véhicules récupérés aujourd&apos;hui
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">ETA moyen</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.avgEta}</div>
+            <p className="text-xs text-muted-foreground">
+              Temps moyen de récupération
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filtres */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="inline-flex rounded-lg border overflow-hidden">
-          <button
-            onClick={() => setTypeFilter('all')}
-            className={`px-3 py-1 text-sm ${
-              typeFilter === 'all' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Tous
-          </button>
-          <button
-            onClick={() => setTypeFilter('pickup')}
-            className={`px-3 py-1 text-sm ${
-              typeFilter === 'pickup' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Récup
-          </button>
-          <button
-            onClick={() => setTypeFilter('keys')}
-            className={`px-3 py-1 text-sm ${
-              typeFilter === 'keys' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Clés
-          </button>
-          <button
-            onClick={() => setTypeFilter('other')}
-            className={`px-3 py-1 text-sm ${
-              typeFilter === 'other' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Autre
-          </button>
-        </div>
-
-        <div className="inline-flex rounded-lg border overflow-hidden">
-          <button
-            onClick={() => setStatusFilter('open')}
-            className={`px-3 py-1 text-sm ${
-              statusFilter === 'open' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Ouvertes
-          </button>
-          <button
-            onClick={() => setStatusFilter('handled')}
-            className={`px-3 py-1 text-sm ${
-              statusFilter === 'handled' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Traitées
-          </button>
-          <button
-            onClick={() => setStatusFilter('all')}
-            className={`px-3 py-1 text-sm ${
-              statusFilter === 'all' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Toutes
-          </button>
-        </div>
-
-        <div className="inline-flex rounded-lg border overflow-hidden">
-          <button
-            onClick={() => setTimeFilter('1h')}
-            className={`px-3 py-1 text-sm ${
-              timeFilter === '1h' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Dernière heure
-          </button>
-          <button
-            onClick={() => setTimeFilter('today')}
-            className={`px-3 py-1 text-sm ${
-              timeFilter === 'today' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Aujourd&apos;hui
-          </button>
-          <button
-            onClick={() => setTimeFilter('all')}
-            className={`px-3 py-1 text-sm ${
-              timeFilter === 'all' ? 'bg-black text-white' : 'bg-white'
-            }`}
-          >
-            Tout
-          </button>
-        </div>
-
-        <input
-          placeholder="Recherche (#0007, note...)"
-          className="border rounded px-3 py-1 text-sm"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
-
-      {/* Liste */}
-      <div className="space-y-3 mt-4">
-        {filtered.map((r) => {
-          const isOpen = !r.handled_at
-          const tone =
-            r.type === 'pickup' ? 'red' : r.type === 'keys' ? 'yellow' : 'blue'
-          const isFading = fading.includes(r.id)
-
-          return (
-            <div
-              key={r.id}
-              className={`transition-all duration-300 ease-in-out transform ${
-                isFading ? 'opacity-0 scale-[0.98]' : 'opacity-100'
-              } rounded-xl border p-4 bg-white shadow-sm`}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filtres
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={typeFilter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTypeFilter('all')}
             >
-              <div className="flex items-start justify-between">
-                <div className="space-y-1">
-                  <div className="font-semibold">
-                    Ticket #{r.ticket?.short_code ?? '—'}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge tone={tone as any}>
-                      {r.type === 'pickup'
-                        ? '🚗 Récupération'
-                        : r.type === 'keys'
-                        ? '🔑 Clés'
-                        : '💬 Autre'}
-                    </Badge>
-                    {isOpen ? (
-                      <Badge tone="red">Ouverte</Badge>
-                    ) : (
-                      <Badge tone="green">Traité</Badge>
-                    )}
-                    {r.pickup_eta_minutes ? (
-                      <Badge tone="gray">
-                        ETA {r.pickup_eta_minutes} min
-                      </Badge>
-                    ) : null}
-                    {r.pickup_at ? (
-                      <Badge tone="gray">
-                        Heure {new Date(r.pickup_at).toLocaleTimeString()}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  {r.comment ? (
-                    <div className="text-sm text-gray-700 italic mt-1">
-                      “{r.comment}”
-                    </div>
-                  ) : null}
-                </div>
-                <div className="text-xs text-gray-500">
-                  {new Date(r.created_at).toLocaleTimeString()}
-                </div>
-              </div>
-
-              <div className="mt-3 flex gap-2">
-                {isOpen && (
-                  <button
-                    onClick={() => markHandled(r.id)}
-                    className="px-3 py-1 rounded bg-black text-white text-sm hover:bg-gray-800 transition"
-                  >
-                    Marquer comme traité
-                  </button>
-                )}
-                {!isOpen && (
-                  <span className="text-xs text-gray-500">
-                    Traité à {new Date(r.handled_at!).toLocaleTimeString()}
-                  </span>
-                )}
-              </div>
-            </div>
-          )
-        })}
-        {filtered.length === 0 && (
-          <div className="text-gray-500 text-sm">
-            Aucune demande selon les filtres.
+              Tous
+            </Button>
+            <Button
+              variant={typeFilter === 'pickup' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTypeFilter('pickup')}
+            >
+              <Car className="mr-2 h-4 w-4" />
+              Récupération
+            </Button>
+            <Button
+              variant={typeFilter === 'keys' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTypeFilter('keys')}
+            >
+              <Key className="mr-2 h-4 w-4" />
+              Clés
+            </Button>
+            <Button
+              variant={typeFilter === 'other' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTypeFilter('other')}
+            >
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Autre
+            </Button>
           </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={statusFilter === 'open' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('open')}
+            >
+              Ouvertes
+            </Button>
+            <Button
+              variant={statusFilter === 'handled' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('handled')}
+            >
+              Traitées
+            </Button>
+            <Button
+              variant={statusFilter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('all')}
+            >
+              Toutes
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={timeFilter === '1h' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTimeFilter('1h')}
+            >
+              Dernière heure
+            </Button>
+            <Button
+              variant={timeFilter === 'today' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTimeFilter('today')}
+            >
+              Aujourd&apos;hui
+            </Button>
+            <Button
+              variant={timeFilter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTimeFilter('all')}
+            >
+              Tout
+            </Button>
+          </div>
+
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Rechercher par ticket ou commentaire..."
+              className="pl-9"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Liste des demandes */}
+      <div className="space-y-3">
+        {filtered.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <Users className="h-12 w-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">Aucune demande selon les filtres.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          filtered.map((r) => {
+            const isOpen = !r.handled_at
+            const isFading = fading.includes(r.id)
+
+            return (
+              <Card
+                key={r.id}
+                className={`transition-all duration-300 ${
+                  isFading ? 'opacity-50 scale-[0.98]' : 'opacity-100'
+                }`}
+              >
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2">
+                      <CardTitle className="text-lg">
+                        Ticket #{r.ticket?.short_code ?? '—'}
+                      </CardTitle>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant={isOpen ? 'destructive' : 'secondary'}>
+                          {isOpen ? (
+                            <>
+                              <Clock className="mr-1 h-3 w-3" />
+                              Ouverte
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="mr-1 h-3 w-3" />
+                              Traitée
+                            </>
+                          )}
+                        </Badge>
+                        <Badge variant="outline" className="gap-1">
+                          {getTypeIcon(r.type)}
+                          {getTypeLabel(r.type)}
+                        </Badge>
+                        {r.pickup_eta_minutes && (
+                          <Badge variant="outline">
+                            <Clock className="mr-1 h-3 w-3" />
+                            {r.pickup_eta_minutes} min
+                          </Badge>
+                        )}
+                        {r.pickup_at && (
+                          <Badge variant="outline">
+                            <Clock className="mr-1 h-3 w-3" />
+                            {new Date(r.pickup_at).toLocaleTimeString('fr-FR', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(r.created_at).toLocaleTimeString('fr-FR')}
+                    </span>
+                  </div>
+                  {r.comment && (
+                    <CardDescription className="italic mt-2">
+                      &ldquo;{r.comment}&rdquo;
+                    </CardDescription>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {isOpen ? (
+                    <Button onClick={() => markHandled(r.id)} className="w-full sm:w-auto">
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      Marquer comme traité
+                    </Button>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Traité à {new Date(r.handled_at!).toLocaleTimeString('fr-FR')}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })
         )}
       </div>
-
-     <Toast
-        open={toast.open}
-        title={toast.title}
-        desc={toast.desc}
-        onClose={() => setToast({ open: false, title: '', desc: '' })}
-      />
     </div>
   )
 }
