@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createSupabaseClient } from '@/app/lib/supabaseClient'
+import { supabase } from '../../lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 
-const supabase = createSupabaseClient()
 
 export default function AuthCallback() {
   const router = useRouter()

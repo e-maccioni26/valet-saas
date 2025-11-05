@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../../lib/supabaseClient'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useToast } from '../../../hooks/use-toast'
+import { useToast } from '@/hooks/use-toast'
+import { AddVehicleDialog } from '../../../components/Addvehicledialog'
 import { 
   Car, 
   Key, 
@@ -17,15 +18,23 @@ import {
   Calendar,
   TrendingUp,
   Users,
-  Filter
+  Filter,
+  MapPin,
+  Palette
 } from 'lucide-react'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 type ReqType = 'pickup' | 'keys' | 'other'
+
+type Vehicle = {
+  brand: string | null
+  model: string | null
+  color: string | null
+  license_plate: string | null
+  parking_location: string | null
+  vehicle_condition: string | null
+  notes: string | null
+}
 
 type RequestRow = {
   id: string
@@ -34,7 +43,10 @@ type RequestRow = {
   created_at: string
   handled_at: string | null
   ticket_id: string
-  ticket?: { short_code: string }
+  ticket?: { 
+    short_code: string
+    vehicle?: Vehicle
+  }
   pickup_eta_minutes: number | null
   pickup_at: string | null
 }
@@ -52,15 +64,33 @@ export default function Dashboard() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  useEffect(() => {
-    const load = async () => {
-      const { data, error } = await supabase
-        .from('requests')
-        .select('*, ticket:tickets(short_code)')
-        .order('created_at', { ascending: false })
-      if (!error && data) setRequests(data as any)
+  const loadRequests = async () => {
+    const { data, error } = await supabase
+      .from('requests')
+      .select(`
+        *,
+        ticket:tickets(
+          short_code,
+          vehicle:vehicles(
+            brand,
+            model,
+            color,
+            license_plate,
+            parking_location,
+            vehicle_condition,
+            notes
+          )
+        )
+      `)
+      .order('created_at', { ascending: false })
+
+    if (!error && data) {
+      setRequests(data as any)
     }
-    load()
+  }
+
+  useEffect(() => {
+    loadRequests()
 
     const ch = supabase
       .channel('requests-stream')
@@ -71,12 +101,14 @@ export default function Dashboard() {
           const newReq = payload.new as any
 
           if (payload.eventType === 'INSERT') {
+            // Recharger pour avoir les infos véhicule
+            await loadRequests()
+
             const { data: t } = await supabase
               .from('tickets')
               .select('short_code')
               .eq('id', newReq.ticket_id)
               .single()
-            setRequests((prev) => [{ ...newReq, ticket: t || undefined }, ...prev])
 
             toast({
               title: `Nouvelle demande – Ticket #${t?.short_code ?? '—'}`,
@@ -162,7 +194,8 @@ export default function Dashboard() {
         const q = query.toLowerCase()
         const sc = r.ticket?.short_code?.toLowerCase() ?? ''
         const c = r.comment?.toLowerCase() ?? ''
-        if (!sc.includes(q) && !c.includes(q)) return false
+        const plate = r.ticket?.vehicle?.license_plate?.toLowerCase() ?? ''
+        if (!sc.includes(q) && !c.includes(q) && !plate.includes(q)) return false
       }
       return true
     })
@@ -210,12 +243,15 @@ export default function Dashboard() {
     <div className="space-y-6 p-6">
       <audio ref={audioRef} src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAA==" />
 
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Gérez vos demandes de voiturier en temps réel
-        </p>
+      {/* Header avec bouton Ajouter véhicule */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Gérez vos demandes de voiturier en temps réel
+          </p>
+        </div>
+        <AddVehicleDialog onVehicleAdded={loadRequests} />
       </div>
 
       {/* Stats Cards */}
@@ -367,7 +403,7 @@ export default function Dashboard() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Rechercher par ticket ou commentaire..."
+              placeholder="Rechercher par ticket, plaque ou commentaire..."
               className="pl-9"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -389,6 +425,7 @@ export default function Dashboard() {
           filtered.map((r) => {
             const isOpen = !r.handled_at
             const isFading = fading.includes(r.id)
+            const vehicle = r.ticket?.vehicle
 
             return (
               <Card
@@ -437,16 +474,65 @@ export default function Dashboard() {
                           </Badge>
                         )}
                       </div>
+
+                      {/* Informations véhicule */}
+                      {vehicle && (vehicle.brand || vehicle.model || vehicle.color || vehicle.license_plate) && (
+                        <div className="mt-3 p-3 bg-slate-50 rounded-lg border space-y-1">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                            <Car className="h-4 w-4" />
+                            Informations véhicule
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            {(vehicle.brand || vehicle.model) && (
+                              <div>
+                                <span className="text-muted-foreground">Véhicule:</span>{' '}
+                                <span className="font-medium">
+                                  {[vehicle.brand, vehicle.model].filter(Boolean).join(' ')}
+                                </span>
+                              </div>
+                            )}
+                            {vehicle.color && (
+                              <div className="flex items-center gap-1">
+                                <Palette className="h-3 w-3 text-muted-foreground" />
+                                <span className="font-medium">{vehicle.color}</span>
+                              </div>
+                            )}
+                            {vehicle.license_plate && (
+                              <div>
+                                <span className="text-muted-foreground">Plaque:</span>{' '}
+                                <span className="font-mono font-bold">{vehicle.license_plate}</span>
+                              </div>
+                            )}
+                            {vehicle.parking_location && (
+                              <div className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3 text-muted-foreground" />
+                                <span className="font-medium">{vehicle.parking_location}</span>
+                              </div>
+                            )}
+                          </div>
+                          {vehicle.vehicle_condition && (
+                            <div className="text-xs text-orange-700 mt-2">
+                              <strong>⚠️ État:</strong> {vehicle.vehicle_condition}
+                            </div>
+                          )}
+                          {vehicle.notes && (
+                            <div className="text-xs text-slate-600 mt-1">
+                              <strong>📝 Notes:</strong> {vehicle.notes}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {r.comment && (
+                        <CardDescription className="italic mt-2">
+                          &ldquo;{r.comment}&rdquo;
+                        </CardDescription>
+                      )}
                     </div>
                     <span className="text-xs text-muted-foreground">
                       {new Date(r.created_at).toLocaleTimeString('fr-FR')}
                     </span>
                   </div>
-                  {r.comment && (
-                    <CardDescription className="italic mt-2">
-                      &ldquo;{r.comment}&rdquo;
-                    </CardDescription>
-                  )}
                 </CardHeader>
                 <CardContent>
                   {isOpen ? (

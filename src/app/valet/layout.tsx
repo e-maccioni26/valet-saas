@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createSupabaseClient } from '@/app/lib/supabaseClient'
+import { supabase } from '../lib/supabaseClient'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Car, LogOut, Menu, Plus, LayoutDashboard } from 'lucide-react'
 import Link from 'next/link'
 
-const supabase = createSupabaseClient()
 
 export default function ValetLayout({
   children,
