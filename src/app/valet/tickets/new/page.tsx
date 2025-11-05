@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { ulid } from 'ulid'
-import { createSupabaseClient } from '@/app/lib/supabaseClient'
+import { supabase } from '../../../lib/supabaseClient'
 
-const supabase = createSupabaseClient()
+
 
 export default function NewTicketPage() {
   const [shortCode, setShortCode] = useState('')

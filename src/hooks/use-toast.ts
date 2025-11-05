@@ -1,5 +1,6 @@
 'use client'
 
+import { useCallback } from 'react'
 import { toast as sonnerToast } from 'sonner'
 
 type ToastType = 'default' | 'success' | 'error' | 'info'
@@ -14,40 +15,39 @@ interface ToastOptions {
 }
 
 export function useToast() {
-  const toast = (options: ToastOptions) => {
-    const { title, description, type = 'default', duration = 4000, actionLabel, onAction } = options
+  const toast = useCallback((options: ToastOptions) => {
+    const {
+      title,
+      description,
+      type = 'default',
+      duration = 4000,
+      actionLabel,
+      onAction,
+    } = options
+
+    const common = {
+      description,
+      duration,
+      action: actionLabel
+        ? { label: actionLabel, onClick: onAction }
+        : undefined,
+    }
 
     switch (type) {
       case 'success':
-        sonnerToast.success(title ?? '', {
-          description,
-          duration,
-          action: actionLabel ? { label: actionLabel, onClick: onAction } : undefined,
-        })
+        sonnerToast.success(title ?? '', common)
         break
       case 'error':
-        sonnerToast.error(title ?? '', {
-          description,
-          duration,
-          action: actionLabel ? { label: actionLabel, onClick: onAction } : undefined,
-        })
+        sonnerToast.error(title ?? '', common)
         break
       case 'info':
-        sonnerToast.info(title ?? '', {
-          description,
-          duration,
-          action: actionLabel ? { label: actionLabel, onClick: onAction } : undefined,
-        })
+        sonnerToast.info(title ?? '', common)
         break
       default:
-        sonnerToast(title ?? '', {
-          description,
-          duration,
-          action: actionLabel ? { label: actionLabel, onClick: onAction } : undefined,
-        })
+        sonnerToast(title ?? '', common)
         break
     }
-  }
+  }, [])
 
   return { toast }
 }

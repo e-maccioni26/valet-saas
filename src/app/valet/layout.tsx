@@ -8,46 +8,51 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Car, LogOut, Menu, Plus, LayoutDashboard } from 'lucide-react'
 import Link from 'next/link'
 
-
-export default function ValetLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function ValetLayout({ children }: { children: React.ReactNode }) {
   const [firstName, setFirstName] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
+    let cancelled = false
+
     const fetchProfile = async () => {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession()
 
-      if (sessionError || !session?.user) {
-        router.replace('/auth/login')
-        return
+        if (sessionError || !session?.user) {
+          if (!cancelled) router.replace('/auth/login')
+          return
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('first_name')
+          .eq('id', session.user.id)
+          .single()
+
+        if (profileError) {
+          console.error('Erreur profil:', profileError)
+        }
+
+        if (!cancelled) {
+          setFirstName(profile?.first_name || 'Utilisateur')
+        }
+      } catch (err) {
+        console.error('Erreur inattendue profil:', err)
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-
-      const userId = session.user.id
-
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('first_name')
-        .eq('id', userId)
-        .single()
-
-      if (profileError) {
-        console.error('Erreur profil:', profileError)
-      }
-
-      setFirstName(profile?.first_name || 'Utilisateur')
-      setLoading(false)
     }
 
     fetchProfile()
+    return () => {
+      cancelled = true
+    }
   }, [router])
 
   const logout = async () => {
@@ -55,13 +60,12 @@ export default function ValetLayout({
     router.replace('/auth/login')
   }
 
-  const getInitials = (name: string) => {
-    return name
+  const getInitials = (name: string) =>
+    name
       .split(' ')
       .map((n) => n[0])
       .join('')
       .toUpperCase()
-  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -73,9 +77,7 @@ export default function ValetLayout({
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
                 <Car className="h-5 w-5 text-primary-foreground" />
               </div>
-              <span className="hidden font-semibold sm:inline-block">
-                ValetPro
-              </span>
+              <span className="hidden font-semibold sm:inline-block">ValetPro</span>
             </Link>
 
             <nav className="hidden md:flex items-center gap-1">
@@ -133,7 +135,7 @@ export default function ValetLayout({
           </div>
         </div>
 
-        {/* Mobile menu */}
+        {/* MENU MOBILE */}
         {mobileMenuOpen && (
           <div className="border-t md:hidden">
             <nav className="container flex flex-col gap-1 p-4">
@@ -163,7 +165,6 @@ export default function ValetLayout({
         )}
       </header>
 
-      {/* CONTENU */}
       <main className="container py-6">{children}</main>
     </div>
   )

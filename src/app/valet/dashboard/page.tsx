@@ -1,19 +1,19 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
-import { AddVehicleDialog } from '../../../components/Addvehicledialog'
-import { 
-  Car, 
-  Key, 
-  MessageSquare, 
-  Clock, 
-  CheckCircle2, 
+import { AddVehicleDialog } from '@/components/Addvehicledialog'
+import {
+  Car,
+  Key,
+  MessageSquare,
+  Clock,
+  CheckCircle2,
   Search,
   Calendar,
   TrendingUp,
@@ -22,7 +22,6 @@ import {
   MapPin,
   Palette
 } from 'lucide-react'
-
 
 type ReqType = 'pickup' | 'keys' | 'other'
 
@@ -43,7 +42,7 @@ type RequestRow = {
   created_at: string
   handled_at: string | null
   ticket_id: string
-  ticket?: { 
+  ticket?: {
     short_code: string
     vehicle?: Vehicle
   }
@@ -56,15 +55,14 @@ export default function Dashboard() {
   const [fading, setFading] = useState<string[]>([])
   const { toast } = useToast()
 
-  // Filtres
   const [typeFilter, setTypeFilter] = useState<'all' | ReqType>('all')
   const [statusFilter, setStatusFilter] = useState<'open' | 'handled' | 'all'>('open')
   const [query, setQuery] = useState('')
   const [timeFilter, setTimeFilter] = useState<'1h' | 'today' | 'all'>('today')
-
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const loadRequests = async () => {
+  // ✅ Version stabilisée : ne change jamais entre les rendus
+  const loadRequests = useCallback(async () => {
     const { data, error } = await supabase
       .from('requests')
       .select(`
@@ -84,96 +82,86 @@ export default function Dashboard() {
       `)
       .order('created_at', { ascending: false })
 
-    if (!error && data) {
-      setRequests(data as any)
+    if (error) {
+      console.error('Erreur de chargement des requêtes:', error.message)
+      toast({
+        type: 'error',
+        title: 'Erreur',
+        description: "Impossible de charger les demandes"
+      })
+      return
     }
-  }
 
+    if (data) setRequests(data as any)
+  }, [toast])
+
+  // ✅ Effet principal - se monte une seule fois
   useEffect(() => {
     loadRequests()
 
+    // ✅ Canal Realtime optimisé
     const ch = supabase
       .channel('requests-stream')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'requests' },
-        async (payload) => {
-          const newReq = payload.new as any
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requests' }, async (payload) => {
+        const newReq = payload.new as RequestRow
 
-          if (payload.eventType === 'INSERT') {
-            // Recharger pour avoir les infos véhicule
-            await loadRequests()
+        // 🔄 Injection directe du nouveau ticket sans refetch complet
+        setRequests(prev => [newReq, ...prev])
 
-            const { data: t } = await supabase
-              .from('tickets')
-              .select('short_code')
-              .eq('id', newReq.ticket_id)
-              .single()
+        const { data: ticket } = await supabase
+          .from('tickets')
+          .select('short_code')
+          .eq('id', newReq.ticket_id)
+          .single()
 
-            toast({
-              title: `Nouvelle demande – Ticket #${t?.short_code ?? '—'}`,
-              description:
-                newReq.type === 'pickup'
-                  ? '🚗 Récupération véhicule'
-                  : newReq.type === 'keys'
-                  ? '🔑 Clés'
-                  : '💬 Autre',
-            })
-            if (audioRef.current) audioRef.current.play().catch(() => {})
-          }
+        toast({
+          type: 'info',
+          title: `Nouvelle demande – Ticket #${ticket?.short_code ?? '—'}`,
+          description:
+            newReq.type === 'pickup'
+              ? '🚗 Récupération véhicule'
+              : newReq.type === 'keys'
+              ? '🔑 Clés'
+              : '💬 Autre',
+        })
 
-          if (payload.eventType === 'UPDATE' && newReq.handled_at) {
-            setRequests((prev) =>
-              prev.map((r) =>
-                r.id === newReq.id ? { ...r, handled_at: newReq.handled_at } : r
-              )
-            )
-          }
-        }
-      )
+        audioRef.current?.play().catch(() => {})
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'requests' }, (payload) => {
+        const updated = payload.new as RequestRow
+        setRequests(prev =>
+          prev.map(r => (r.id === updated.id ? { ...r, handled_at: updated.handled_at } : r))
+        )
+      })
       .subscribe()
 
-    return () => supabase.removeChannel(ch)
-  }, [toast])
+    return () => {
+      supabase.removeChannel(ch)
+    }
+  }, [loadRequests]) // ✅ stable grâce à useCallback
 
+  // ✅ Marquer comme traité
   async function markHandled(id: string) {
     try {
-      setFading((prev) => [...prev, id])
-      await new Promise((r) => setTimeout(r, 200))
+      setFading(prev => [...prev, id])
+      await new Promise(r => setTimeout(r, 200))
 
       const res = await fetch(`/api/requests/${id}/handle`, { method: 'POST' })
-      if (!res.ok) {
-        toast({
-          title: '❌ Erreur',
-          description: 'Impossible de marquer la demande comme traitée.',
-          variant: 'destructive',
-        })
-        setFading((prev) => prev.filter((x) => x !== id))
-        return
-      }
+      if (!res.ok) throw new Error('Impossible de marquer la demande comme traitée.')
 
-      setRequests((prev) =>
-        prev.map((r) =>
-          r.id === id ? { ...r, handled_at: new Date().toISOString() } : r
-        )
+      setRequests(prev =>
+        prev.map(r => (r.id === id ? { ...r, handled_at: new Date().toISOString() } : r))
       )
 
-      toast({
-        title: '✅ Demande traitée',
-        description: 'La demande a été marquée comme traitée.',
-      })
-
-      setFading((prev) => prev.filter((x) => x !== id))
-    } catch (err) {
-      console.error(err)
-      toast({
-        title: '⚠️ Erreur inattendue',
-        description: String(err),
-        variant: 'destructive',
-      })
+      toast({ type: 'success', title: '✅ Demande traitée', description: 'La demande a été marquée comme traitée.' })
+    } catch (err: any) {
+      toast({ type: 'error', title: 'Erreur', description: err.message || 'Une erreur est survenue.' })
+    } finally {
+      setFading(prev => prev.filter(x => x !== id))
     }
   }
 
+  // ✅ Filtres optimisés (useMemo)
   const filtered = useMemo(() => {
     const now = new Date()
     const from =
@@ -182,7 +170,7 @@ export default function Dashboard() {
         : timeFilter === 'today'
         ? new Date(new Date().toDateString())
         : null
-    return requests.filter((r) => {
+    return requests.filter(r => {
       if (typeFilter !== 'all' && r.type !== typeFilter) return false
       if (statusFilter !== 'all') {
         const open = !r.handled_at
@@ -201,15 +189,14 @@ export default function Dashboard() {
     })
   }, [requests, typeFilter, statusFilter, query, timeFilter])
 
+  // ✅ Calcul des stats
   const stats = useMemo(() => {
     const today = new Date(new Date().toDateString())
-    const todayReqs = requests.filter((r) => new Date(r.created_at) >= today)
-    const open = requests.filter((r) => !r.handled_at)
-    const pickupsToday = todayReqs.filter((r) => r.type === 'pickup').length
+    const todayReqs = requests.filter(r => new Date(r.created_at) >= today)
+    const open = requests.filter(r => !r.handled_at)
+    const pickupsToday = todayReqs.filter(r => r.type === 'pickup').length
     const avgEta = (() => {
-      const vals = requests
-        .map((r) => r.pickup_eta_minutes)
-        .filter((v): v is number => typeof v === 'number')
+      const vals = requests.map(r => r.pickup_eta_minutes).filter((v): v is number => typeof v === 'number')
       if (!vals.length) return '—'
       const m = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
       return `${m} min`
@@ -217,25 +204,20 @@ export default function Dashboard() {
     return { today: todayReqs.length, open: open.length, pickupsToday, avgEta }
   }, [requests])
 
+  // ✅ Fonctions auxiliaires
   const getTypeIcon = (type: ReqType) => {
     switch (type) {
-      case 'pickup':
-        return <Car className="h-4 w-4" />
-      case 'keys':
-        return <Key className="h-4 w-4" />
-      default:
-        return <MessageSquare className="h-4 w-4" />
+      case 'pickup': return <Car className="h-4 w-4" />
+      case 'keys': return <Key className="h-4 w-4" />
+      default: return <MessageSquare className="h-4 w-4" />
     }
   }
 
   const getTypeLabel = (type: ReqType) => {
     switch (type) {
-      case 'pickup':
-        return 'Récupération'
-      case 'keys':
-        return 'Clés'
-      default:
-        return 'Autre'
+      case 'pickup': return 'Récupération'
+      case 'keys': return 'Clés'
+      default: return 'Autre'
     }
   }
 
@@ -258,13 +240,13 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Aujourd&apos;hui</CardTitle>
+            <CardTitle className="text-sm font-medium">Aujourd'hui</CardTitle>
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.today}</div>
             <p className="text-xs text-muted-foreground">
-              Demandes reçues aujourd&apos;hui
+              Demandes reçues aujourd'hui
             </p>
           </CardContent>
         </Card>
@@ -290,7 +272,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{stats.pickupsToday}</div>
             <p className="text-xs text-muted-foreground">
-              Véhicules récupérés aujourd&apos;hui
+              Véhicules récupérés aujourd'hui
             </p>
           </CardContent>
         </Card>
@@ -389,7 +371,7 @@ export default function Dashboard() {
               size="sm"
               onClick={() => setTimeFilter('today')}
             >
-              Aujourd&apos;hui
+              Aujourd'hui
             </Button>
             <Button
               variant={timeFilter === 'all' ? 'default' : 'outline'}
