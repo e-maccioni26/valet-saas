@@ -20,7 +20,8 @@ import {
   Users,
   Filter,
   MapPin,
-  Palette
+  Palette,
+  UserCheck
 } from 'lucide-react'
 
 type ReqType = 'pickup' | 'keys' | 'other'
@@ -42,6 +43,7 @@ type RequestRow = {
   created_at: string
   handled_at: string | null
   ticket_id: string
+  assigned_valet_id: string | null
   ticket?: {
     short_code: string
     vehicle?: Vehicle
@@ -53,22 +55,53 @@ type RequestRow = {
 export default function Dashboard() {
   const [requests, setRequests] = useState<RequestRow[]>([])
   const [fading, setFading] = useState<string[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [isManager, setIsManager] = useState(false)
   const { toast } = useToast()
 
   const [typeFilter, setTypeFilter] = useState<'all' | ReqType>('all')
-  const [statusFilter, setStatusFilter] = useState<'open' | 'handled' | 'all'>('open')
+  const [statusFilter, setStatusFilter] = useState<'open' | 'handled' | 'mine' | 'all'>('mine')
   const [query, setQuery] = useState('')
   const [timeFilter, setTimeFilter] = useState<'1h' | 'today' | 'all'>('today')
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // ✅ Version stabilisée : ne change jamais entre les rendus
+  // Charger les demandes
   const loadRequests = useCallback(async () => {
-    const { data, error } = await supabase
+    // Vérifier la session
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      toast({
+        type: 'error',
+        title: 'Non authentifié',
+        description: 'Veuillez vous connecter'
+      })
+      return
+    }
+
+    const userId = session.user.id
+    setCurrentUserId(userId)
+
+const { data: roleData, error: roleError } = await supabase
+  .from('safe_user_roles')
+  .select('role_name')
+  .eq('user_id', userId)
+  .maybeSingle()
+
+if (roleError) {
+  console.error('Erreur de récupération du rôle:', roleError)
+}
+
+const userIsManager = roleData?.role_name === 'manager' || roleData?.role_name === 'admin'
+    setIsManager(userIsManager)
+
+    // Construire la requête selon le rôle
+    let requestsQuery = supabase
       .from('requests')
       .select(`
         *,
         ticket:tickets(
           short_code,
+          event_id,
           vehicle:vehicles(
             brand,
             model,
@@ -82,31 +115,70 @@ export default function Dashboard() {
       `)
       .order('created_at', { ascending: false })
 
+    // Si c'est un valet, filtrer par assignation ou événements
+    if (!userIsManager) {
+      // Récupérer les événements du voiturier
+      const { data: userEvents } = await supabase
+        .from('user_events')
+        .select('event_id')
+        .eq('user_id', userId)
+
+      const eventIds = userEvents?.map(e => e.event_id) || []
+
+      if (eventIds.length > 0) {
+        // On ne peut pas faire de filtre complexe directement, on va filtrer côté client
+        // Récupérer toutes les demandes et filtrer ensuite
+        const { data, error } = await requestsQuery
+
+        if (error) {
+          console.error('Erreur de chargement des requêtes:', error)
+          toast({
+            type: 'error',
+            title: 'Erreur',
+            description: 'Impossible de charger les demandes'
+          })
+          return
+        }
+
+        // Filtrer : assignées au valet OU pour ses événements
+        const filteredData = (data || []).filter(r => 
+          r.assigned_valet_id === userId ||
+          (r.ticket && eventIds.includes(r.ticket.event_id))
+        )
+
+        setRequests(filteredData as any)
+        return
+      }
+    }
+
+    // Manager ou valet sans événements
+    const { data, error } = await requestsQuery
+
     if (error) {
-      console.error('Erreur de chargement des requêtes:', error.message)
+      console.error('Erreur de chargement des requêtes:', error)
       toast({
         type: 'error',
         title: 'Erreur',
-        description: "Impossible de charger les demandes"
+        description: 'Impossible de charger les demandes'
       })
       return
     }
 
-    if (data) setRequests(data as any)
+    setRequests(data as any)
   }, [toast])
 
-  // ✅ Effet principal - se monte une seule fois
+  // Effet principal
   useEffect(() => {
     loadRequests()
 
-    // ✅ Canal Realtime optimisé
+    // Canal Realtime
     const ch = supabase
       .channel('requests-stream')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requests' }, async (payload) => {
         const newReq = payload.new as RequestRow
 
-        // 🔄 Injection directe du nouveau ticket sans refetch complet
-        setRequests(prev => [newReq, ...prev])
+        // Recharger pour avoir les données complètes
+        loadRequests()
 
         const { data: ticket } = await supabase
           .from('tickets')
@@ -138,9 +210,9 @@ export default function Dashboard() {
     return () => {
       supabase.removeChannel(ch)
     }
-  }, [loadRequests]) // ✅ stable grâce à useCallback
+  }, [loadRequests])
 
-  // ✅ Marquer comme traité
+  // Marquer comme traité
   async function markHandled(id: string) {
     try {
       setFading(prev => [...prev, id])
@@ -161,7 +233,36 @@ export default function Dashboard() {
     }
   }
 
-  // ✅ Filtres optimisés (useMemo)
+  // Prendre en charge une demande
+  async function assignToMe(requestId: string) {
+    if (!currentUserId) return
+
+    try {
+      const { error } = await supabase
+        .from('requests')
+        .update({ assigned_valet_id: currentUserId })
+        .eq('id', requestId)
+
+      if (error) throw error
+
+      // Recharger les demandes
+      loadRequests()
+
+      toast({ 
+        type: 'success', 
+        title: '✅ Demande assignée', 
+        description: 'Vous êtes maintenant en charge de cette demande.' 
+      })
+    } catch (err: any) {
+      toast({ 
+        type: 'error', 
+        title: 'Erreur', 
+        description: err.message || 'Impossible d\'assigner la demande.' 
+      })
+    }
+  }
+
+  // Filtres
   const filtered = useMemo(() => {
     const now = new Date()
     const from =
@@ -170,14 +271,25 @@ export default function Dashboard() {
         : timeFilter === 'today'
         ? new Date(new Date().toDateString())
         : null
+        
     return requests.filter(r => {
+      // Filtre par type
       if (typeFilter !== 'all' && r.type !== typeFilter) return false
+      
+      // Filtre par statut
       if (statusFilter !== 'all') {
         const open = !r.handled_at
+        const mine = r.assigned_valet_id === currentUserId
+        
         if (statusFilter === 'open' && !open) return false
         if (statusFilter === 'handled' && open) return false
+        if (statusFilter === 'mine' && !mine) return false
       }
+      
+      // Filtre par temps
       if (from && new Date(r.created_at) < from) return false
+      
+      // Filtre par recherche
       if (query) {
         const q = query.toLowerCase()
         const sc = r.ticket?.short_code?.toLowerCase() ?? ''
@@ -185,26 +297,36 @@ export default function Dashboard() {
         const plate = r.ticket?.vehicle?.license_plate?.toLowerCase() ?? ''
         if (!sc.includes(q) && !c.includes(q) && !plate.includes(q)) return false
       }
+      
       return true
     })
-  }, [requests, typeFilter, statusFilter, query, timeFilter])
+  }, [requests, typeFilter, statusFilter, query, timeFilter, currentUserId])
 
-  // ✅ Calcul des stats
+  // Stats
   const stats = useMemo(() => {
     const today = new Date(new Date().toDateString())
     const todayReqs = requests.filter(r => new Date(r.created_at) >= today)
-    const open = requests.filter(r => !r.handled_at)
+    const myReqs = requests.filter(r => r.assigned_valet_id === currentUserId)
+    const myOpen = myReqs.filter(r => !r.handled_at)
     const pickupsToday = todayReqs.filter(r => r.type === 'pickup').length
+    
     const avgEta = (() => {
       const vals = requests.map(r => r.pickup_eta_minutes).filter((v): v is number => typeof v === 'number')
       if (!vals.length) return '—'
       const m = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
       return `${m} min`
     })()
-    return { today: todayReqs.length, open: open.length, pickupsToday, avgEta }
-  }, [requests])
+    
+    return { 
+      today: todayReqs.length, 
+      myOpen: myOpen.length,
+      myTotal: myReqs.length,
+      pickupsToday, 
+      avgEta 
+    }
+  }, [requests, currentUserId])
 
-  // ✅ Fonctions auxiliaires
+  // Fonctions auxiliaires
   const getTypeIcon = (type: ReqType) => {
     switch (type) {
       case 'pickup': return <Car className="h-4 w-4" />
@@ -225,7 +347,7 @@ export default function Dashboard() {
     <div className="space-y-6 p-6">
       <audio ref={audioRef} src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAA==" />
 
-      {/* Header avec bouton Ajouter véhicule */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
@@ -253,13 +375,13 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ouvertes</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Mes demandes</CardTitle>
+            <UserCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.open}</div>
+            <div className="text-2xl font-bold">{stats.myOpen}</div>
             <p className="text-xs text-muted-foreground">
-              Demandes en attente
+              En attente / {stats.myTotal} total
             </p>
           </CardContent>
         </Card>
@@ -300,6 +422,7 @@ export default function Dashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Filtres de type */}
           <div className="flex flex-wrap gap-2">
             <Button
               variant={typeFilter === 'all' ? 'default' : 'outline'}
@@ -334,7 +457,15 @@ export default function Dashboard() {
             </Button>
           </div>
 
+          {/* Filtres de statut */}
           <div className="flex flex-wrap gap-2">
+            <Button
+              variant={statusFilter === 'mine' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter('mine')}
+            >
+              Mes demandes
+            </Button>
             <Button
               variant={statusFilter === 'open' ? 'default' : 'outline'}
               size="sm"
@@ -358,6 +489,7 @@ export default function Dashboard() {
             </Button>
           </div>
 
+          {/* Filtres de temps */}
           <div className="flex flex-wrap gap-2">
             <Button
               variant={timeFilter === '1h' ? 'default' : 'outline'}
@@ -382,6 +514,7 @@ export default function Dashboard() {
             </Button>
           </div>
 
+          {/* Recherche */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -408,6 +541,8 @@ export default function Dashboard() {
             const isOpen = !r.handled_at
             const isFading = fading.includes(r.id)
             const vehicle = r.ticket?.vehicle
+            const isMine = r.assigned_valet_id === currentUserId
+            const isUnassigned = !r.assigned_valet_id
 
             return (
               <Card
@@ -418,7 +553,7 @@ export default function Dashboard() {
               >
                 <CardHeader>
                   <div className="flex items-start justify-between">
-                    <div className="space-y-2">
+                    <div className="space-y-2 flex-1">
                       <CardTitle className="text-lg">
                         Ticket #{r.ticket?.short_code ?? '—'}
                       </CardTitle>
@@ -440,6 +575,17 @@ export default function Dashboard() {
                           {getTypeIcon(r.type)}
                           {getTypeLabel(r.type)}
                         </Badge>
+                        {isMine && (
+                          <Badge variant="default">
+                            <UserCheck className="mr-1 h-3 w-3" />
+                            Ma demande
+                          </Badge>
+                        )}
+                        {isUnassigned && (
+                          <Badge variant="outline" className="border-orange-500 text-orange-700">
+                            Non assignée
+                          </Badge>
+                        )}
                         {r.pickup_eta_minutes && (
                           <Badge variant="outline">
                             <Clock className="mr-1 h-3 w-3" />
@@ -517,16 +663,31 @@ export default function Dashboard() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {isOpen ? (
-                    <Button onClick={() => markHandled(r.id)} className="w-full sm:w-auto">
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
-                      Marquer comme traité
-                    </Button>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Traité à {new Date(r.handled_at!).toLocaleTimeString('fr-FR')}
-                    </p>
-                  )}
+                  <div className="flex gap-2 flex-wrap">
+                    {isOpen ? (
+                      <>
+                        {isMine ? (
+                          <Button onClick={() => markHandled(r.id)} className="w-full sm:w-auto">
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            Marquer comme traité
+                          </Button>
+                        ) : isUnassigned ? (
+                          <Button onClick={() => assignToMe(r.id)} variant="outline" className="w-full sm:w-auto">
+                            <UserCheck className="mr-2 h-4 w-4" />
+                            Prendre en charge
+                          </Button>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            Assignée à un autre voiturier
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Traité à {new Date(r.handled_at!).toLocaleTimeString('fr-FR')}
+                      </p>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )

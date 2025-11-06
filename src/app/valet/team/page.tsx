@@ -95,13 +95,9 @@ export default function TeamManagementPage() {
         .from('user_events')
         .select(`
           user_id,
-          event_id,
-          users:user_id (
-            id,
-            email
-          )
+          event_id
         `)
-        .in('event_id', eventIds)
+      .in('event_id', eventIds)
 
       if (error) throw error
 
