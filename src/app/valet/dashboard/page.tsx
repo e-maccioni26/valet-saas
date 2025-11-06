@@ -240,13 +240,13 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Aujourd'hui</CardTitle>
+            <CardTitle className="text-sm font-medium">Aujourd&apos;hui</CardTitle>
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.today}</div>
             <p className="text-xs text-muted-foreground">
-              Demandes reçues aujourd'hui
+              Demandes reçues aujourd&apos;hui
             </p>
           </CardContent>
         </Card>
@@ -272,7 +272,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{stats.pickupsToday}</div>
             <p className="text-xs text-muted-foreground">
-              Véhicules récupérés aujourd'hui
+              Véhicules récupérés aujourd&apos;hui
             </p>
           </CardContent>
         </Card>
@@ -371,7 +371,7 @@ export default function Dashboard() {
               size="sm"
               onClick={() => setTimeFilter('today')}
             >
-              Aujourd'hui
+              Aujourd&apos;hui
             </Button>
             <Button
               variant={timeFilter === 'all' ? 'default' : 'outline'}
