@@ -1,31 +1,21 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
-
-// ✅ Crée un client Supabase sécurisé (clé service)
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!, // clé service = full access
-  { auth: { persistSession: false } }
-)
+import { supabaseServerAdmin } from '../../../../lib/supabaseServer' 
 
 export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  _req: Request,
+  { params }: { params: { id: string } }
 ) {
+  const { id } = params
+  if (!id) {
+    return NextResponse.json({ error: 'Missing request ID' }, { status: 400 })
+  }
+
   try {
-    const { id } = await params
-
-    if (!id) {
-      return NextResponse.json({ error: 'Missing request ID' }, { status: 400 })
-    }
-
-    // ✅ Met à jour la demande dans Supabase
-    const { error } = await supabase
+    // ✅ utiliser le client admin
+    const { error } = await supabaseServerAdmin
       .from('requests')
-      .update({
-        handled_at: new Date().toISOString(),
-      })
+      .update({ handled_at: new Date().toISOString() })
       .eq('id', id)
 
     if (error) {
@@ -36,15 +26,13 @@ export async function POST(
       )
     }
 
-    // ✅ Rafraîchit la page dashboard côté serveur (cache ISR)
     revalidatePath('/valet/dashboard')
-
     console.log(`✅ Request ${id} marked as handled`)
     return NextResponse.json({ success: true })
-  } catch (err) {
+  } catch (err: any) {
     console.error('🚨 Unexpected server error:', err)
     return NextResponse.json(
-      { error: 'Unexpected server error', details: String(err) },
+      { error: 'Unexpected server error', details: String(err?.message ?? err) },
       { status: 500 }
     )
   }
