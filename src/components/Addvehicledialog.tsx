@@ -55,7 +55,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
       toast({
         title: 'Erreur',
         description: 'Le numéro de ticket est requis',
-        variant: 'destructive',
+        type: 'error',
       })
       return
     }
@@ -75,7 +75,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
         toast({
           title: 'Erreur de recherche',
           description: `Erreur: ${ticketError.message || 'Impossible de chercher le ticket'}`,
-          variant: 'destructive',
+          type: 'error',
         })
         setLoading(false)
         return
@@ -85,7 +85,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
         toast({
           title: 'Ticket introuvable',
           description: `Le ticket #${ticketNumber} n'existe pas dans la base de données.`,
-          variant: 'destructive',
+          type: 'error',
         })
         setLoading(false)
         return
@@ -105,7 +105,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
         toast({
           title: 'Erreur de vérification',
           description: `Erreur: ${checkError.message}`,
-          variant: 'destructive',
+          type: 'error',
         })
         setLoading(false)
         return
@@ -135,7 +135,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
           toast({
             title: 'Erreur de mise à jour',
             description: `Code: ${updateError.code} - ${updateError.message}`,
-            variant: 'destructive',
+            type: 'error',
           })
           setLoading(false)
           return
@@ -174,7 +174,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
           toast({
             title: 'Erreur d\'enregistrement',
             description: `Code: ${insertError.code} - ${insertError.message}${insertError.hint ? ` (${insertError.hint})` : ''}`,
-            variant: 'destructive',
+            type: 'error',
           })
           setLoading(false)
           return
@@ -204,7 +204,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
       toast({
         title: 'Erreur inattendue',
         description: error?.message || JSON.stringify(error) || 'Une erreur est survenue',
-        variant: 'destructive',
+        type: 'error',
       })
     } finally {
       setLoading(false)

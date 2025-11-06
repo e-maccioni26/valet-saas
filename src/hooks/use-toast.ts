@@ -28,8 +28,8 @@ export function useToast() {
     const common = {
       description,
       duration,
-      action: actionLabel
-        ? { label: actionLabel, onClick: onAction }
+      action: actionLabel && onAction
+        ? { label: actionLabel, onClick: (e: React.MouseEvent<HTMLButtonElement>) => onAction() }
         : undefined,
     }
 
