@@ -55,7 +55,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
       toast({
         title: 'Erreur',
         description: 'Le numéro de ticket est requis',
-        variant: 'destructive',
+        type: 'error',
       })
       return
     }
@@ -75,7 +75,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
         toast({
           title: 'Erreur de recherche',
           description: `Erreur: ${ticketError.message || 'Impossible de chercher le ticket'}`,
-          variant: 'destructive',
+          type: 'error',
         })
         setLoading(false)
         return
@@ -85,7 +85,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
         toast({
           title: 'Ticket introuvable',
           description: `Le ticket #${ticketNumber} n'existe pas dans la base de données.`,
-          variant: 'destructive',
+          type: 'error',
         })
         setLoading(false)
         return
@@ -105,7 +105,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
         toast({
           title: 'Erreur de vérification',
           description: `Erreur: ${checkError.message}`,
-          variant: 'destructive',
+          type: 'error',
         })
         setLoading(false)
         return
@@ -135,7 +135,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
           toast({
             title: 'Erreur de mise à jour',
             description: `Code: ${updateError.code} - ${updateError.message}`,
-            variant: 'destructive',
+            type: 'error',
           })
           setLoading(false)
           return
@@ -146,6 +146,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
         toast({
           title: '✅ Véhicule mis à jour',
           description: `Les informations du véhicule pour le ticket #${ticketNumber} ont été mises à jour.`,
+          type: 'success',
         })
       } else {
         console.log('➕ Création d\'un nouveau véhicule')
@@ -174,7 +175,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
           toast({
             title: 'Erreur d\'enregistrement',
             description: `Code: ${insertError.code} - ${insertError.message}${insertError.hint ? ` (${insertError.hint})` : ''}`,
-            variant: 'destructive',
+            type: 'error',
           })
           setLoading(false)
           return
@@ -185,6 +186,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
         toast({
           title: '✅ Véhicule enregistré',
           description: `Le véhicule pour le ticket #${ticketNumber} a été enregistré avec succès.`,
+          type: 'success',
         })
       }
 
@@ -204,7 +206,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
       toast({
         title: 'Erreur inattendue',
         description: error?.message || JSON.stringify(error) || 'Une erreur est survenue',
-        variant: 'destructive',
+        type: 'error',
       })
     } finally {
       setLoading(false)
@@ -226,7 +228,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
             Ajouter des informations véhicule
           </DialogTitle>
           <DialogDescription>
-            Enregistrez les détails d'un véhicule pour un ticket client. Tous les champs sont optionnels sauf le numéro de ticket.
+            Enregistrez les détails d&apos;un véhicule pour un ticket client. Tous les champs sont optionnels sauf le numéro de ticket.
           </DialogDescription>
         </DialogHeader>
 
@@ -287,7 +289,7 @@ export function AddVehicleDialog({ onVehicleAdded }: AddVehicleDialogProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="licensePlate">Plaque d'immatriculation</Label>
+              <Label htmlFor="licensePlate">Plaque d&apos;immatriculation</Label>
               <Input
                 id="licensePlate"
                 placeholder="Ex: AB-123-CD"
