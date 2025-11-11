@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Car, Key, MessageSquare, Clock, CheckCircle2, Loader2, PartyPopper } from 'lucide-react'
+import PayButton from '../../../components/PayButton'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -134,35 +135,51 @@ export default function ClientPage({ params }: { params: Promise<{ token: string
   }
 
   if (status === 'handled') {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-50 to-emerald-50 p-4">
-        <Card className="w-full max-w-md border-green-200 shadow-xl">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-green-100 animate-pulse">
-              <CheckCircle2 className="h-10 w-10 text-green-600" />
-            </div>
-            <CardTitle className="text-2xl text-green-700">
-              Demande traitée !
-            </CardTitle>
-            <CardDescription className="text-base">
-              Votre voiturier arrive avec votre véhicule
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-center space-y-4">
-            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <Car className="h-5 w-5" />
-              <span>Ticket #{ticket.short_code}</span>
-            </div>
-            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-              <p className="text-sm text-green-700 font-medium">
-                Veuillez vous diriger vers la sortie principale
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-50 to-emerald-50 p-4">
+      <Card className="w-full max-w-md border-green-200 shadow-xl">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-green-100 animate-pulse">
+            <CheckCircle2 className="h-10 w-10 text-green-600" />
+          </div>
+          <CardTitle className="text-2xl text-green-700">
+            Votre véhicule est prêt 🚗
+          </CardTitle>
+          <CardDescription className="text-base">
+            Le voiturier arrive avec votre véhicule.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-6 text-center">
+          <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+            <Car className="h-5 w-5" />
+            <span>Ticket #{ticket.short_code}</span>
+          </div>
+
+          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+            <p className="text-sm text-green-700 font-medium">
+              Merci d’avoir utilisé notre service.  
+              Vous pouvez régler le service et laisser un pourboire 👇
+            </p>
+          </div>
+
+          {/* 💳 Intégration paiement Stripe */}
+          <div className="mt-4">
+            <PayButton
+              eventId={ticket.event_id}
+              requestId={ticket.id}
+              defaultServiceAmountCents={1500} // ex: 15€
+            />
+          </div>
+
+          <p className="text-xs text-muted-foreground mt-3">
+            Paiement sécurisé par Stripe.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
