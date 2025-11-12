@@ -6,15 +6,21 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export async function GET(_req: Request, context: { params: Promise<{ token: string }> }) {
-  // ✅ on attend la promesse "params"
-  const { token } = await context.params
+export async function GET(
+  _req: Request,
+  context: { params: Promise<{ token: string }> } // ✅ param asynchrone
+) {
+  const { token } = await context.params            // ✅ on attend la promesse
+
+  if (!token) {
+    return NextResponse.json({ error: 'Missing token' }, { status: 400 })
+  }
 
   const { data, error } = await supabase
     .from('tickets')
     .select('*')
     .eq('token', token)
-    .single()
+    .maybeSingle()
 
   if (error || !data) {
     console.error('❌ Ticket not found or query error:', error)

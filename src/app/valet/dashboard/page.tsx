@@ -354,7 +354,16 @@ const userIsManager = roleData?.role_name === 'manager' || roleData?.role_name =
           <p className="text-muted-foreground">
             Gérez vos demandes de voiturier en temps réel
           </p>
+          {/* 🆕 Ajout ici */}
+          <p
+            className={`mt-1 text-sm font-medium ${
+              isManager ? 'text-green-600' : 'text-blue-600'
+            }`}
+          >
+            Rôle actuel : {isManager ? 'Manager' : 'Voiturier'}
+          </p>
         </div>
+
         <AddVehicleDialog onVehicleAdded={loadRequests} />
       </div>
 
