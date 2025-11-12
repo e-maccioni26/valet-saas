@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
-import { supabaseServerAdmin } from '../../../../lib/supabaseServer' 
+import { supabaseServerAdmin } from '../../../../lib/supabaseServer'
 
 export async function POST(
   _req: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> } // <--- ici on précise que params est une Promise
 ) {
-  const { id } = params
+  const { id } = await context.params               // <--- on attend la résolution de params
+
   if (!id) {
     return NextResponse.json({ error: 'Missing request ID' }, { status: 400 })
   }
 
   try {
-    // ✅ utiliser le client admin
     const { error } = await supabaseServerAdmin
       .from('requests')
       .update({ handled_at: new Date().toISOString() })

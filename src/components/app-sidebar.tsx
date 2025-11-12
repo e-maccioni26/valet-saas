@@ -1,28 +1,22 @@
-"use client"
+'use client'
 
-import * as React from "react"
+import * as React from 'react'
+import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import {
-  IconCamera,
-  IconChartBar,
+  IconCar,
   IconDashboard,
-  IconDatabase,
-  IconFileAi,
-  IconFileDescription,
-  IconFileWord,
-  IconFolder,
-  IconHelp,
-  IconInnerShadowTop,
-  IconListDetails,
-  IconReport,
-  IconSearch,
-  IconSettings,
+  IconPlus,
   IconUsers,
-} from "@tabler/icons-react"
-
-import { NavDocuments } from "@/components/nav-documents"
-import { NavMain } from "@/components/nav-main"
-import { NavSecondary } from "@/components/nav-secondary"
-import { NavUser } from "@/components/nav-user"
+  IconChartBar,
+  IconSettings,
+  IconHelp,
+  IconUser,
+} from '@tabler/icons-react'
+import { supabase } from '@/app/lib/supabaseClient'
+import { NavMain } from '@/components/nav-main'
+import { NavSecondary } from '@/components/nav-secondary'
+import { NavUser } from '@/components/nav-user'
 import {
   Sidebar,
   SidebarContent,
@@ -31,126 +25,113 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
+} from '@/components/ui/sidebar'
 
-const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
-  },
-  navMain: [
+export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const pathname = usePathname()
+  const [userProfile, setUserProfile] = useState<any>(null)
+  const [isManager, setIsManager] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadUserProfile()
+  }, [])
+
+  async function loadUserProfile() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // Récupérer le profil avec les informations de base
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+
+      // Récupérer les rôles
+      const { data: userRoles } = await supabase
+        .from('user_roles')
+        .select('roles(name)')
+        .eq('user_id', user.id)
+
+      const roles = userRoles?.map((r: any) => r.roles.name) || []
+
+      setUserProfile({
+        ...profile,
+        email: user.email,
+        roles
+      })
+
+      // Vérifier si l'utilisateur est manager ou admin
+      const hasManagerRole = roles.includes('manager') || roles.includes('admin')
+      setIsManager(hasManagerRole)
+    } catch (error) {
+      console.error('Error loading user profile:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Navigation principale
+  const navMain = [
     {
-      title: "Dashboard",
-      url: "#",
+      title: 'Dashboard',
+      url: '/valet/dashboard',
       icon: IconDashboard,
+      isActive: pathname === '/valet/dashboard',
     },
     {
-      title: "Lifecycle",
-      url: "#",
-      icon: IconListDetails,
+      title: 'Nouveau ticket',
+      url: '/valet/tickets/new',
+      icon: IconPlus,
+      isActive: pathname === '/valet/tickets/new',
     },
-    {
-      title: "Analytics",
-      url: "#",
-      icon: IconChartBar,
-    },
-    {
-      title: "Projects",
-      url: "#",
-      icon: IconFolder,
-    },
-    {
-      title: "Team",
-      url: "#",
+  ]
+
+  // Ajouter les liens managers si l'utilisateur a le rôle
+  if (isManager) {
+    navMain.push({
+      title: 'Mon équipe',
+      url: '/valet/team',
       icon: IconUsers,
-    },
-  ],
-  navClouds: [
+      isActive: pathname === '/valet/team',
+    })
+    navMain.push({
+      title: 'Analytics',
+      url: '/valet/analytics',
+      icon: IconChartBar,
+      isActive: pathname === '/valet/analytics',
+    })
+  }
+
+  // Navigation secondaire
+  const navSecondary = [
     {
-      title: "Capture",
-      icon: IconCamera,
-      isActive: true,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
+      title: 'Mon profil',
+      url: '/valet/profile',
+      icon: IconUser,
     },
     {
-      title: "Proposal",
-      icon: IconFileDescription,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Prompts",
-      icon: IconFileAi,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-  ],
-  navSecondary: [
-    {
-      title: "Settings",
-      url: "#",
+      title: 'Paramètres',
+      url: '/valet/settings',
       icon: IconSettings,
     },
     {
-      title: "Get Help",
-      url: "#",
+      title: 'Aide',
+      url: '/valet/help',
       icon: IconHelp,
     },
-    {
-      title: "Search",
-      url: "#",
-      icon: IconSearch,
-    },
-  ],
-  documents: [
-    {
-      name: "Data Library",
-      url: "#",
-      icon: IconDatabase,
-    },
-    {
-      name: "Reports",
-      url: "#",
-      icon: IconReport,
-    },
-    {
-      name: "Word Assistant",
-      url: "#",
-      icon: IconFileWord,
-    },
-  ],
-}
+  ]
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const userData = {
+    name: userProfile
+      ? `${userProfile.first_name || ''} ${userProfile.last_name || ''}`.trim() || 'Utilisateur'
+      : 'Utilisateur',
+    email: userProfile?.email || '',
+    avatar: '/avatars/default.jpg',
+  }
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -160,21 +141,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               asChild
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
-              <a href="#">
-                <IconInnerShadowTop className="!size-5" />
-                <span className="text-base font-semibold">Acme Inc.</span>
+              <a href="/valet/dashboard">
+                <IconCar className="!size-5" />
+                <span className="text-base font-semibold">ValetPro</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavDocuments items={data.documents} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        {!loading && <NavMain items={navMain} />}
+        <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={userData} />
       </SidebarFooter>
     </Sidebar>
   )
