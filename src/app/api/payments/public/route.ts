@@ -1,130 +1,71 @@
 import { NextResponse } from 'next/server'
-import { stripe } from '@/lib/stripe'
-import { supabaseServerAdmin } from '../../../lib/supabaseServer'
+import { createPublicPayment } from '@/services/payment.service'
+import { paymentLogger } from '@/lib/logger'
+import type { CreatePublicPaymentPayload } from '@/types/payment'
 
-type Body = {
-  token: string
-  serviceAmount: number // en cents (1500 = 15,00€)
-  tipAmount?: number    // en cents
-  notes?: string
-}
-
-function clampInt(v: any, min: number, max: number) {
-  const n = Math.max(min, Math.floor(Number(v) || 0))
-  return Math.min(n, max)
-}
-
+/**
+ * POST /api/payments/public
+ * Crée une session de paiement Stripe pour un utilisateur invité (public)
+ * Authentification par token de ticket
+ */
 export async function POST(req: Request) {
+  const logger = paymentLogger.child({ endpoint: '/api/payments/public' })
+
   try {
-    const body = (await req.json()) as Body
+    // Parse et validation du body
+    const body = (await req.json()) as CreatePublicPaymentPayload
+
     if (!body?.token) {
-      return NextResponse.json({ error: 'Missing token' }, { status: 400 })
+      logger.warn('Missing token in request')
+      return NextResponse.json(
+        { error: 'Missing required field: token' },
+        { status: 400 }
+      )
     }
 
-    // 1) Ticket à partir du token
-    const { data: ticket, error: tErr } = await supabaseServerAdmin
-      .from('tickets')
-      .select('id, event_id, short_code')
-      .eq('token', body.token)
-      .maybeSingle()
-
-    if (tErr || !ticket) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 404 })
+    if (typeof body.serviceAmount !== 'number') {
+      logger.warn('Invalid serviceAmount', { serviceAmount: body.serviceAmount })
+      return NextResponse.json(
+        { error: 'Invalid serviceAmount. Must be a number (in cents)' },
+        { status: 400 }
+      )
     }
 
-    // 2) Dernière request liée à ce ticket (handled ou la plus récente)
-    const { data: request } = await supabaseServerAdmin
-      .from('requests')
-      .select('id, handled_at')
-      .eq('ticket_id', ticket.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    logger.info('Creating public payment', { token: body.token })
 
-    // requestId peut être null, la FK l’accepte
-    const requestId = request?.id ?? null
+    // Délégation au service
+    const result = await createPublicPayment(body)
 
-    // 3) Normalisation montants (anti-manipulation)
-    const serviceAmount = clampInt(body.serviceAmount, 100, 100_000) // 1€–1000€
-    const tipAmount = clampInt(body.tipAmount ?? 0, 0, 50_000)       // 0–500€
+    logger.info('Public payment created successfully', { sessionId: result.sessionId })
 
-    // 4) Prépare les line_items Stripe
-    const currency = 'eur'
-    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-      {
-        quantity: 1,
-        price_data: {
-          currency,
-          product_data: {
-            name: 'Service voiturier',
-            metadata: {
-              event_id: ticket.event_id,
-              ticket_id: ticket.id,
-              request_id: requestId ?? '',
-              type: 'service',
-            },
-          },
-          unit_amount: serviceAmount,
-        },
-      },
-    ]
-    if (tipAmount > 0) {
-      line_items.push({
-        quantity: 1,
-        price_data: {
-          currency,
-          product_data: { name: 'Pourboire', metadata: { type: 'tip' } },
-          unit_amount: tipAmount,
-        },
-      })
-    }
-
-    // 5) Enregistrer un paiement "pending" AVANT la session
-    const { data: paymentRow, error: pErr } = await supabaseServerAdmin
-      .from('payments')
-      .insert({
-        request_id: requestId,          // peut être null
-        event_id: ticket.event_id,
-        valet_id: null,                 // invité → pas d’utilisateur
-        currency,
-        service_amount: serviceAmount / 100, // ta table est en €
-        tip_amount: tipAmount / 100,
-        // total_amount est généré → NE PAS envoyer
-        payment_status: 'pending',
-        notes: body.notes ?? null,
-        metadata: { source: 'public' },
-      })
-      .select('id')
-      .single()
-
-    if (pErr || !paymentRow) {
-      console.error('DB insert failed', pErr)
-      return NextResponse.json({ error: 'DB insert failed' }, { status: 500 })
-    }
-
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      line_items,
-      success_url: `${baseUrl}/r/${body.token}?success=1`,
-      cancel_url: `${baseUrl}/r/${body.token}?canceled=1`,
-      invoice_creation: { enabled: true },
-      metadata: {
-        supabase_payment_id: paymentRow.id,
-        event_id: ticket.event_id,
-        request_id: requestId ?? '',
-        ticket_id: ticket.id,
-      },
+    return NextResponse.json({
+      url: result.url,
+      sessionId: result.sessionId,
     })
-
-    await supabaseServerAdmin
-      .from('payments')
-      .update({ stripe_session_id: session.id })
-      .eq('id', paymentRow.id)
-
-    return NextResponse.json({ url: session.url })
   } catch (e: any) {
-    console.error('public checkout error', e)
-    return NextResponse.json({ error: 'Server error', details: String(e?.message ?? e) }, { status: 500 })
+    logger.error('Failed to create public payment', e)
+
+    // Messages d'erreur plus explicites
+    if (e.message?.includes('Invalid ticket token')) {
+      return NextResponse.json(
+        { error: 'Invalid token', details: 'The provided ticket token is invalid or expired' },
+        { status: 404 }
+      )
+    }
+
+    if (e.message?.includes('Database insert failed')) {
+      return NextResponse.json(
+        { error: 'Database error', details: 'Failed to create payment record' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(
+      {
+        error: 'Server error',
+        details: process.env.NODE_ENV === 'development' ? e.message : 'An error occurred',
+      },
+      { status: 500 }
+    )
   }
 }
