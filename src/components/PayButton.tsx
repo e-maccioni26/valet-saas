@@ -5,7 +5,13 @@ import { loadStripe } from '@stripe/stripe-js'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PK!)
+// Vérification que la clé Stripe est définie
+const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+if (!stripePublishableKey) {
+  console.error('❌ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not defined in environment variables')
+}
+
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null
 
 type Props =
   | {
